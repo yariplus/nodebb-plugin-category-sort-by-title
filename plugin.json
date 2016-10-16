@@ -1,0 +1,18 @@
+{
+  "id": "nodebb-plugin-category-sort-by-title",
+  "name": "Sort by Title",
+  "description": "Sort category topics alphabetically.",
+  "library": "./library.js",
+  "hooks": [
+    { "hook": "static:app.load", "method": "init" },
+    { "hook": "filter:category.topics.prepare", "method": "prepare" },
+    { "hook": "action:topic.move", "method": "topicMove" },
+    { "hook": "filter:topic.edit", "method": "topicEdit" },
+    { "hook": "action:topic.post", "method": "topicPost" },
+    { "hook": "action:topic.purge", "method": "topicPurge" },
+    { "hook": "action:category.delete", "method": "categoryDelete" }
+  ],
+  "scripts": [
+    "./client.js"
+  ]
+}

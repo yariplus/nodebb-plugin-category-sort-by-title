@@ -1,0 +1,22 @@
+{
+  "name": "nodebb-plugin-category-sort-by-title",
+  "version": "1.0.0",
+  "description": "Sort category topics alphabetically.",
+  "license": "(CC0-1.0 OR MIT)",
+  "main": "./library.js",
+  "repository": "yariplus/nodebb-plugin-category-sort-by-title",
+  "homepage": "https://github.com/yariplus/nodebb-plugin-category-sort-by-title",
+  "bugs": "https://github.com/yariplus/nodebb-plugin-category-sort-by-title/issues",
+  "keywords": [
+    "nodebb",
+    "plugin",
+    "category",
+    "sort",
+    "title",
+    "topics",
+    "alphabetically"
+  ],
+  "nbbpm": {
+    "compatibility": "^1.2.0"
+  }
+}
