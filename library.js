@@ -20,7 +20,19 @@ exports.init = function (data, next) {
 
   Categories.getTopicIds = function (set, reverse, start, stop, callback) {
     if (!!set.match(/^cid:\d+:tids:lex$/)) {
-      db.getSortedSetRangeByLex(set, '-', '+', start, stop - start, function (err, topicValues) {
+      var method, min, max
+
+      if (reverse && !!db.getSortedSetRevRangeByLex) {
+        method = 'getSortedSetRevRangeByLex'
+        min = '+'
+        max = '-'
+      } else {
+        method = 'getSortedSetRangeByLex'
+        min = '-'
+        max = '+'
+      }
+
+      db[method](set, min, max, start, stop - start, function (err, topicValues) {
         var tids = []
 
         topicValues.forEach(function (value) {
@@ -79,10 +91,16 @@ exports.init = function (data, next) {
 exports.prepare = function (data, next) {
   User.getSettings(data.uid, function (err, settings) {
     if (settings.categoryTopicSort === 'a_z') {
-      data.set = 'cid:' + data.cid + ':tids:lex';
+      data.set = 'cid:' + data.cid + ':tids:lex'
+      data.reverse = false
     }
 
-    next(null, data);
+    if (settings.categoryTopicSort === 'z_a') {
+      data.set = 'cid:' + data.cid + ':tids:lex'
+      data.reverse = true
+    }
+
+    next(null, data)
   })
 }
 
