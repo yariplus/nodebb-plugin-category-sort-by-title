@@ -26,8 +26,9 @@ exports.init = (params, next) => {
 
   var getTopicIds = Categories.getTopicIds
 
-  Categories.getTopicIds = function (set, reverse, start, stop, callback) {
+  Categories.getTopicIds = function (cid, set, reverse, start, stop, callback) {
     if (!!set.match(/^cid:\d+:tids:lex$/)) {
+      var pinnedTids, pinnedCount, totalPinnedCount
       var method, min, max
 
       if (reverse && !!db.getSortedSetRevRangeByLex) {
@@ -40,28 +41,65 @@ exports.init = (params, next) => {
         max = '+'
       }
 
-      db[method](set, min, max, start, stop - start, function (err, topicValues) {
-        var tids = []
+      async.waterfall([
+        function (next) {
+          Categories.getPinnedTids(cid, 0, -1, next)
+        },
+        function (_pinnedTids, next) {
+          totalPinnedCount = _pinnedTids.length
 
-        topicValues.forEach(function (value) {
-          tid = value.split(':')
-          tid = tid[tid.length - 1]
-          tids.push(tid)
-        })
+          pinnedTids = _pinnedTids.slice(start, stop === -1 ? undefined : stop + 1)
 
-        callback(null, tids)
+          pinnedCount = pinnedTids.length
 
-        db.isSetMembers('sortbytitle:purged', tids, function (err, isMember) {
-          for (var i = 0; i < topicValues.length; i++) {
-            if (isMember[i]) {
-              db.sortedSetRemove(set, topicValues[i])
-              db.setRemove('sortbytitle:purged', tids[i])
-            }
+          var topicsPerPage = stop - start + 1
+
+          var normalTidsToGet = Math.max(0, topicsPerPage - pinnedCount)
+
+          if (!normalTidsToGet && stop !== -1) {
+            return next(null, [])
           }
-        })
-      })
+          if (start > 0 && totalPinnedCount) {
+            start -= totalPinnedCount - pinnedCount
+          }
+          stop = stop === -1 ? stop : start + normalTidsToGet - 1
+
+          if (Array.isArray(set)) {
+            db[method](set[0], min, max, start, stop - start, next)
+          } else {
+            db[method](set, min, max, start, stop - start, next)
+          }
+        },
+        function (topicValues, next) {
+          var tids = []
+
+          topicValues.forEach(function (value) {
+            tid = value.split(':')
+            tid = tid[tid.length - 1]
+            tids.push(tid)
+          })
+
+          next(null, tids)
+
+          db.isSetMembers('sortbytitle:purged', tids, function (err, isMember) {
+            for (var i = 0; i < topicValues.length; i++) {
+              if (isMember[i]) {
+                db.sortedSetRemove(set, topicValues[i])
+                db.setRemove('sortbytitle:purged', tids[i])
+              }
+            }
+          })
+        },
+        function (normalTids, next) {
+          normalTids = normalTids.filter(function (tid) {
+            return pinnedTids.indexOf(tid) === -1;
+          });
+
+          next(null, pinnedTids.concat(normalTids));
+        }
+      ], callback);
     } else {
-      getTopicIds(set, reverse, start, stop, callback)
+      getTopicIds(cid, set, reverse, start, stop, callback)
     }
   }
 
