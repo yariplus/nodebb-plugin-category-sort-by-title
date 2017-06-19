@@ -121,7 +121,7 @@ exports.init = (params, next) => {
 }
 
 function reindex(next) {
-  next = next || () => {}
+  next = next || (() => {})
 
   winston.info('[sort-by-title] Re-indexing topics...')
 
