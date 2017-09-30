@@ -13,7 +13,7 @@ let _ = require.main.require('lodash')
 
 let utils = require.main.require('./public/src/utils')
 
-let version = '1.0.0'
+let version = '1.4.0'
 
 exports.init = (params, next) => {
   winston.info('[sort-by-title] Loading sort by title...')
