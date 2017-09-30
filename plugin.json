@@ -5,7 +5,6 @@
   "library": "./library.js",
   "hooks": [
     { "hook": "static:app.load", "method": "init" },
-    { "hook": "filter:category.topics.prepare", "method": "prepare" },
     { "hook": "action:topic.move", "method": "topicMove" },
     { "hook": "filter:topic.edit", "method": "topicEdit" },
     { "hook": "action:topic.post", "method": "topicPost" },

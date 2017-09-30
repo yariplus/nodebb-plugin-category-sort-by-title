@@ -28,7 +28,7 @@ exports.init = (params, next) => {
   let getTopicIds = Categories.getTopicIds
 
   Categories.getTopicIds = function (data, next) {
-    let { sort, cid, reverse, start, stop, } = data
+    let { sort, cid, start, stop, } = data
 
     if (sort !== 'a_z' && sort !== 'z_a') return getTopicIds(data, next)
 
@@ -36,7 +36,7 @@ exports.init = (params, next) => {
 
     let method, min, max, set
 
-    if (reverse) {
+    if (sort === 'z_a') {
       method = 'getSortedSetRevRangeByLex'
       min = '+'
       max = '-'
@@ -151,22 +151,6 @@ function reindex(next) {
     } else {
       winston.info('[sort-by-title] Finished re-indexing topics.')
     }
-  })
-}
-
-exports.prepare = function (data, next) {
-  User.getSettings(data.uid, function (err, settings) {
-    if (settings.categoryTopicSort === 'a_z') {
-      data.set = 'cid:' + data.cid + ':tids:lex'
-      data.reverse = false
-    }
-
-    if (settings.categoryTopicSort === 'z_a') {
-      data.set = 'cid:' + data.cid + ':tids:lex'
-      data.reverse = true
-    }
-
-    next(null, data)
   })
 }
 
