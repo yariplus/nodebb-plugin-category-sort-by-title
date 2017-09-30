@@ -9,6 +9,7 @@ let db = require.main.require('./src/database')
 let async = require.main.require('async')
 let winston = require.main.require('winston')
 let nconf = require.main.require('nconf')
+let _ = require.main.require('lodash')
 
 let utils = require.main.require('./public/src/utils')
 
@@ -26,81 +27,81 @@ exports.init = (params, next) => {
 
   let getTopicIds = Categories.getTopicIds
 
-  Categories.getTopicIds = function (cid, set, reverse, start, stop, callback) {
-    if (!!set.match(/^cid:\d+:tids:lex$/)) {
-      let pinnedTids, pinnedCount, totalPinnedCount
-      let method, min, max
+  Categories.getTopicIds = function (data, next) {
+    let { sort, cid, reverse, start, stop, } = data
 
-      if (reverse && !!db.getSortedSetRevRangeByLex) {
-        method = 'getSortedSetRevRangeByLex'
-        min = '+'
-        max = '-'
-      } else {
-        method = 'getSortedSetRangeByLex'
-        min = '-'
-        max = '+'
-      }
+    if (sort !== 'a_z' && sort !== 'z_a') return getTopicIds(data, next)
 
-      async.waterfall([
-        function (next) {
-          Categories.getPinnedTids(cid, 0, -1, next)
-        },
-        function (_pinnedTids, next) {
-          totalPinnedCount = _pinnedTids.length
+    let pinnedTids
 
-          pinnedTids = _pinnedTids.slice(start, stop === -1 ? undefined : stop + 1)
+    let method, min, max, set
 
-          pinnedCount = pinnedTids.length
-
-          let topicsPerPage = stop - start + 1
-
-          let normalTidsToGet = Math.max(0, topicsPerPage - pinnedCount)
-
-          if (!normalTidsToGet && stop !== -1) {
-            return next(null, [])
-          }
-          if (start > 0 && totalPinnedCount) {
-            start -= totalPinnedCount - pinnedCount
-          }
-          stop = stop === -1 ? stop : start + normalTidsToGet - 1
-
-          if (Array.isArray(set)) {
-            db[method](set[0], min, max, start, stop - start, next)
-          } else {
-            db[method](set, min, max, start, stop - start, next)
-          }
-        },
-        function (topicValues, next) {
-          let tids = []
-
-          topicValues.forEach(function (value) {
-            tid = value.split(':')
-            tid = tid[tid.length - 1]
-            tids.push(tid)
-          })
-
-          next(null, tids)
-
-          db.isSetMembers('sortbytitle:purged', tids, function (err, isMember) {
-            for (let i = 0; i < topicValues.length; i++) {
-              if (isMember[i]) {
-                db.sortedSetRemove(set, topicValues[i])
-                db.setRemove('sortbytitle:purged', tids[i])
-              }
-            }
-          })
-        },
-        function (normalTids, next) {
-          normalTids = normalTids.filter(function (tid) {
-            return pinnedTids.indexOf(tid) === -1;
-          });
-
-          next(null, pinnedTids.concat(normalTids));
-        }
-      ], callback);
+    if (reverse) {
+      method = 'getSortedSetRevRangeByLex'
+      min = '+'
+      max = '-'
     } else {
-      getTopicIds(cid, set, reverse, start, stop, callback)
+      method = 'getSortedSetRangeByLex'
+      min = '-'
+      max = '+'
     }
+
+    async.waterfall([
+      next => {
+        let dataForPinned = _.cloneDeep(data)
+
+        dataForPinned.start = 0
+        dataForPinned.stop = -1
+
+        Categories.getPinnedTids(dataForPinned, next)
+      },
+      (_pinnedTids, next) => {
+        let totalPinnedCount = _pinnedTids.length
+
+        pinnedTids = _pinnedTids.slice(start, stop === -1 ? undefined : stop + 1);
+
+        let pinnedCount = pinnedTids.length;
+
+        let topicsPerPage = stop - start + 1;
+
+        let normalTidsToGet = Math.max(0, topicsPerPage - pinnedCount);
+
+        if (!normalTidsToGet && stop !== -1) return next(null, [])
+
+        set = `cid:${cid}:tids:lex`
+
+        if (start > 0 && totalPinnedCount) start -= totalPinnedCount - pinnedCount
+
+        stop = stop === -1 ? stop : start + normalTidsToGet - 1
+
+        db[method](set, min, max, start, stop - start, next)
+      },
+      (topicValues, next) => {
+        let tids = []
+
+        topicValues.forEach(function (value) {
+          tid = value.split(':')
+          tid = tid[tid.length - 1]
+          tids.push(tid)
+        })
+
+        next(null, tids)
+
+        db.isSetMembers('sortbytitle:purged', tids, function (err, isMember) {
+          for (let i = 0; i < topicValues.length; i++) {
+            if (isMember[i]) {
+              db.sortedSetRemove(set, topicValues[i])
+              db.setRemove('sortbytitle:purged', tids[i])
+            }
+          }
+        })
+      },
+      (normalTids, next) => {
+        normalTids = normalTids.filter(tid => pinnedTids.indexOf(tid) === -1)
+
+        next(null, pinnedTids.concat(normalTids))
+      },
+    ], next)
   }
 
   SocketAdmin.sortbytitle = {}
