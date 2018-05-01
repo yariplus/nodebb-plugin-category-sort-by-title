@@ -156,17 +156,18 @@ function reindex(next) {
 
 exports.topicEdit = function (data, next) {
   let topic = data.topic
+  let {slug, tid, cid} = topic
 
-  Topics.getTopicField(topic.tid, 'title', function (err, title) {
-    if (title !== topic.title) {
-      let oldSlug = utils.slugify(title) || 'topic'
+  if (slug) {
+    Topics.getTopicField(tid, 'slug', (err, oldSlug) => {
+      if (err) return
 
-      db.sortedSetRemove('cid:' + topic.cid + ':tids:lex', oldSlug + ':' + topic.tid)
-      db.sortedSetAdd('cid:' + topic.cid + ':tids:lex', 0, topic.slug.split('/')[1] + ':' + topic.tid)
-    }
+      db.sortedSetRemove(`cid:${cid}:tids:lex`, `${oldSlug.split('/')[1]}:${tid}`)
+      db.sortedSetAdd(`cid:${cid}:tids:lex`, 0, `${slug.split('/')[1]}:${tid}`)
+    })
+  }
 
-    next(null, data)
-  })
+  next(null, data)
 }
 
 exports.topicPost = function (data) {
