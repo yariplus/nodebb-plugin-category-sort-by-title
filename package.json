@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-category-sort-by-title",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Sort category topics alphabetically.",
   "license": "MIT",
   "main": "./library.js",
