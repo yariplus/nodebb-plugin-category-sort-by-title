@@ -1,113 +1,29 @@
 // Sort by Title
 
-let Categories = require.main.require('./src/categories')
-let User = require.main.require('./src/user')
-let Topics = require.main.require('./src/topics')
+let Categories  = require.main.require('./src/categories')
+let User        = require.main.require('./src/user')
+let Topics      = require.main.require('./src/topics')
 let SocketAdmin = require.main.require('./src/socket.io/admin')
-let db = require.main.require('./src/database')
+let db          = require.main.require('./src/database')
 
-let async = require.main.require('async')
+let async   = require.main.require('async')
 let winston = require.main.require('winston')
-let nconf = require.main.require('nconf')
-let _ = require.main.require('lodash')
+let nconf   = require.main.require('nconf')
+let _       = require.main.require('lodash')
 
 let utils = require.main.require('./public/src/utils')
 
 let version = '1.4.0'
 
-exports.init = (params, next) => {
+exports.init = ({app, router, middleware}) => new Promise(next => {
   winston.info('[sort-by-title] Loading sort by title...')
 
-  params.router.get('/admin/plugins/category-sort-by-title', params.middleware.admin.buildHeader, renderAdmin)
-  params.router.get('/api/admin/plugins/category-sort-by-title', renderAdmin)
-
-  function renderAdmin (req, res, next) {
-    res.render('admin/plugins/category-sort-by-title', {})
-  }
-
-  let getTopicIds = Categories.getTopicIds
-
-  Categories.getTopicIds = function (data, next) {
-    let { sort, cid, start, stop, } = data
-
-    if (sort !== 'a_z' && sort !== 'z_a') return getTopicIds(data, next)
-
-    let pinnedTids
-
-    let method, min, max, set
-
-    if (sort === 'z_a') {
-      method = 'getSortedSetRevRangeByLex'
-      min = '+'
-      max = '-'
-    } else {
-      method = 'getSortedSetRangeByLex'
-      min = '-'
-      max = '+'
-    }
-
-    async.waterfall([
-      next => {
-        let dataForPinned = _.cloneDeep(data)
-
-        dataForPinned.start = 0
-        dataForPinned.stop = -1
-
-        Categories.getPinnedTids(dataForPinned, next)
-      },
-      (_pinnedTids, next) => {
-        let totalPinnedCount = _pinnedTids.length
-
-        pinnedTids = _pinnedTids.slice(start, stop === -1 ? undefined : stop + 1);
-
-        let pinnedCount = pinnedTids.length;
-
-        let topicsPerPage = stop - start + 1;
-
-        let normalTidsToGet = Math.max(0, topicsPerPage - pinnedCount);
-
-        if (!normalTidsToGet && stop !== -1) return next(null, [])
-
-        set = `cid:${cid}:tids:lex`
-
-        if (start > 0 && totalPinnedCount) start -= totalPinnedCount - pinnedCount
-
-        stop = stop === -1 ? stop : start + normalTidsToGet - 1
-
-        db[method](set, min, max, start, stop - start, next)
-      },
-      (topicValues, next) => {
-        let tids = []
-
-        topicValues.forEach(function (value) {
-          tid = value.split(':')
-          tid = tid[tid.length - 1]
-          tids.push(tid)
-        })
-
-        next(null, tids)
-
-        db.isSetMembers('sortbytitle:purged', tids, function (err, isMember) {
-          for (let i = 0; i < topicValues.length; i++) {
-            if (isMember[i]) {
-              db.sortedSetRemove(set, topicValues[i])
-              db.setRemove('sortbytitle:purged', tids[i])
-            }
-          }
-        })
-      },
-      (normalTids, next) => {
-        normalTids = normalTids.filter(tid => pinnedTids.indexOf(tid) === -1)
-
-        next(null, pinnedTids.concat(normalTids))
-      },
-    ], next)
-  }
+  const renderAdmin = (req, res) => res.render('admin/plugins/category-sort-by-title', {})
+  router.get('/admin/plugins/category-sort-by-title', middleware.admin.buildHeader, renderAdmin)
+  router.get('/api/admin/plugins/category-sort-by-title', renderAdmin)
 
   SocketAdmin.sortbytitle = {}
-  SocketAdmin.sortbytitle.reindex = (socket, data, next) => {
-    reindex(next)
-  }
+  SocketAdmin.sortbytitle.reindex = (socket, data, next) => reindex(next)
 
   next()
 
@@ -118,6 +34,92 @@ exports.init = (params, next) => {
     if (ver === version) return
 
     reindex()
+  })
+})
+
+exports.buildTopicsSortedSet = ({set, data}) => new Promise(next => {
+  const { sort, cid } = data
+
+  if (sort === 'a_z' || sort === 'z_a') set = `cid:${cid}:tids:lex`
+
+  return next({set, data})
+})
+
+exports.getSortedSetRangeDirection = ({sort, direction}) => new Promise(next => {
+  if (sort === 'z_a') {
+    direction = 'rev'
+    let method = 'getSortedSetRevRangeByLex'
+    let min = '+'
+    let max = '-'
+  } else if (sort === 'a_z') {
+    direction = 'lex'
+    let method = 'getSortedSetRangeByLex'
+    let min = '-'
+    let max = '+'
+  }
+  return next({sort, direction})
+})
+
+exports.getTopicIds = async ({ tids, data, pinnedTids: pinnedTidsOnPage, allPinnedTids: pinnedTids, totalPinnedCount, normalTidsToGet }) => {
+  return new Promise(async next => {
+
+    const [set, direction] = await Promise.all([
+      Categories.buildTopicsSortedSet(data),
+      Categories.getSortedSetRangeDirection(data.sort),
+    ])
+
+    const pinnedCountOnPage = pinnedTidsOnPage.length
+    const topicsPerPage = data.stop - data.start + 1
+    const normalTidsToGet = Math.max(0, topicsPerPage - pinnedCountOnPage)
+
+    if (!normalTidsToGet && data.stop !== -1) return pinnedTidsOnPage
+
+    let start = data.start
+
+    if (start > 0 && totalPinnedCount) {
+      start -= totalPinnedCount - pinnedCountOnPage
+    }
+
+    const stop = data.stop === -1 ? data.stop : start + normalTidsToGet - 1
+
+    let normalTids = []
+    let keys = []
+
+    const reverse = direction === 'highest-to-lowest';
+    if (Array.isArray(set)) {
+      const weights = set.map((s, index) => (index ? 0 : 1))
+      normalTids = await db[reverse ? 'getSortedSetRevIntersect' : 'getSortedSetIntersect']({ sets: set, start: start, stop: stop, weights: weights })
+    } else {
+      if (data.sort === 'z_a') {
+        let keys = await db['getSortedSetRevRangeByLex'](set, '+', '-', start, stop)
+        keys.forEach(key => {
+          tid = key.split(':')
+          tid = tid[tid.length - 1]
+          normalTids.push(tid)
+        })
+      } else if (data.sort === 'a_z') {
+        keys = await db['getSortedSetRangeByLex'](set, '-', '+', start, stop)
+        keys.forEach(key => {
+          tid = key.split(':')
+          tid = tid[tid.length - 1]
+          normalTids.push(tid)
+        })
+      } else {
+        normalTids = await db[reverse ? 'getSortedSetRevRange' : 'getSortedSetRange'](set, start, stop)
+      }
+    }
+
+    normalTids = normalTids.filter(tid => !pinnedTids.includes(tid))
+
+    const purgedTids = await db.isSetMembers('sortbytitle:purged', normalTids)
+    for (let i = 0; i < keys.length; i++) {
+      if (purgedTids[i]) {
+        db.sortedSetRemove(set, keys[i])
+        db.setRemove('sortbytitle:purged', normalTids[i])
+      }
+    }
+
+    return next({ tids: pinnedTidsOnPage.concat(normalTids), data, pinnedTids: pinnedTidsOnPage, allPinnedTids: pinnedTids, totalPinnedCount, normalTidsToGet })
   })
 }
 
@@ -199,8 +201,9 @@ exports.adminBuild = (header, next) => {
   header.plugins.push({
     route : '/plugins/category-sort-by-title',
     icon  : 'fa-sort-alpha-asc',
-    name  : 'Category Sort by Title'
+    name  : 'Category Sort by Title',
   })
 
   next(null, header)
 }
+

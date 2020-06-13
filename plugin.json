@@ -5,6 +5,9 @@
   "library": "./library.js",
   "hooks": [
     { "hook": "static:app.load", "method": "init" },
+    { "hook": "filter:categories.buildTopicsSortedSet", "method": "buildTopicsSortedSet" },
+    { "hook": "filter:categories.getSortedSetRangeDirection", "method": "getSortedSetRangeDirection" },
+    { "hook": "filter:categories.getTopicIds", "method": "getTopicIds" },
     { "hook": "action:topic.move", "method": "topicMove" },
     { "hook": "filter:topic.edit", "method": "topicEdit" },
     { "hook": "action:topic.post", "method": "topicPost" },
